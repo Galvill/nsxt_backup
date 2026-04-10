@@ -92,4 +92,4 @@ Security policies are stored **without** an inline `rules` array; rules are sepa
 
 ## License
 
-Use and modify as needed for your organization.
+This project is licensed under the [MIT License](LICENSE).
