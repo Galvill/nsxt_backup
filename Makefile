@@ -3,17 +3,23 @@ DIST   ?= dist
 BINARY := nsxt-fw-backup
 PKG    := ./cmd/nsxt-fw-backup
 
+# Same artifact naming as build-all: $(BINARY)-$(GOOS)-$(GOARCH)[.exe]
+GOOS   ?= $(shell go env GOOS)
+GOARCH ?= $(shell go env GOARCH)
+WINEXT := $(if $(filter windows,$(GOOS)),.exe,)
+OUT    := $(BINARY)-$(GOOS)-$(GOARCH)$(WINEXT)
+
 .PHONY: build build-all clean help
 
 help:
 	@echo "Targets:"
-	@echo "  build      - build for current OS/arch -> $(DIST)/$(BINARY)"
+	@echo "  build      - build for GOOS/GOARCH (default: go env) -> $(DIST)/$(OUT)"
 	@echo "  build-all  - build for linux, windows, darwin (amd64 + arm64)"
 	@echo "  clean      - remove $(DIST)/"
 
 build:
 	@mkdir -p $(DIST)
-	CGO_ENABLED=0 go build -o $(DIST)/$(BINARY) $(PKG)
+	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -o $(DIST)/$(OUT) $(PKG)
 
 build-all:
 	@mkdir -p $(DIST)
