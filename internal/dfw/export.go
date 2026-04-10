@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gv/nsxt-fw-backup/internal/applog"
 	"github.com/gv/nsxt-fw-backup/internal/backup"
 	"github.com/gv/nsxt-fw-backup/internal/nsx"
 )
@@ -28,6 +29,7 @@ type ExportOptions struct {
 	ManagerHost string
 	Org         string
 	Project     string
+	Log         *applog.Logger
 }
 
 // Export downloads security policies (optional section filter), rules, and referenced infra objects.
@@ -39,6 +41,20 @@ func Export(ctx context.Context, opts ExportOptions) (*backup.Document, error) {
 	if domain == "" {
 		domain = "default"
 	}
+	log := opts.Log
+	if log == nil {
+		log = applog.Discard()
+	}
+
+	scopeLabel := "default Policy scope"
+	if strings.TrimSpace(opts.APIPrefix) != "" {
+		scopeLabel = opts.APIPrefix
+	}
+	log.Infof("export: domain %q, scope %s", domain, scopeLabel)
+	if strings.TrimSpace(opts.Section) != "" {
+		log.Infof("export: filtering to security policy display_name %q", strings.TrimSpace(opts.Section))
+	}
+	log.Infof("export: listing security policies...")
 
 	doc := &backup.Document{
 		FormatVersion: backup.FormatVersion,
@@ -76,6 +92,9 @@ func Export(ctx context.Context, opts ExportOptions) (*backup.Document, error) {
 	if opts.Section != "" && len(policies) == 0 {
 		return nil, fmt.Errorf("no security policy found with display_name %q", opts.Section)
 	}
+	log.Infof("export: %d security %s to back up (of %d listed in domain)",
+		len(policies), pluralPolicies(len(policies)), len(summaries))
+	log.Infof("export: walking policies, rules, and referenced objects...")
 
 	seen := make(map[string]struct{})
 	queue := make([]string, 0, 64)
@@ -115,6 +134,7 @@ func Export(ctx context.Context, opts ExportOptions) (*backup.Document, error) {
 			status = 200
 			delete(prefetched, path)
 		} else {
+			log.Debugf("GET %s", path)
 			body, status, err = opts.Client.Get(opts.APIPrefix, rel)
 			if err != nil {
 				return nil, err
@@ -131,6 +151,10 @@ func Export(ctx context.Context, opts ExportOptions) (*backup.Document, error) {
 			storeBody = stripJSONFields(body, "rules")
 		}
 		doc.Resources[path] = json.RawMessage(append([]byte(nil), storeBody...))
+		n := len(doc.Resources)
+		if n == 1 || n%40 == 0 {
+			log.Infof("export: collected %d resources...", n)
+		}
 
 		for _, ref := range ExtractInfraPaths(body) {
 			ref = NormalizeResourceKey(ref)
@@ -166,6 +190,7 @@ func Export(ctx context.Context, opts ExportOptions) (*backup.Document, error) {
 				continue
 			}
 			ruleList := fmt.Sprintf("infra/domains/%s/security-policies/%s/rules", domainPathSeg(domain), policyID)
+			log.Debugf("LIST rules %s", ruleList)
 			ruleObjs, err := CollectListResults(opts.Client, opts.APIPrefix, ruleList)
 			if err != nil {
 				return nil, fmt.Errorf("list rules for %s: %w", path, err)
@@ -190,7 +215,15 @@ func Export(ctx context.Context, opts ExportOptions) (*backup.Document, error) {
 		}
 	}
 
+	log.Infof("export: done (%d resources)", len(doc.Resources))
 	return doc, nil
+}
+
+func pluralPolicies(n int) string {
+	if n == 1 {
+		return "policy"
+	}
+	return "policies"
 }
 
 func domainPathSeg(domain string) string {

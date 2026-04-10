@@ -4,12 +4,25 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/gv/nsxt-fw-backup/internal/applog"
 	"github.com/gv/nsxt-fw-backup/internal/dfw"
 	"github.com/gv/nsxt-fw-backup/internal/nsx"
 )
 
 // Apply executes CREATE and UPDATE steps using PUT with backup bodies.
-func Apply(c *nsx.Client, apiPrefix string, resources map[string]json.RawMessage, steps []Step) error {
+func Apply(c *nsx.Client, apiPrefix string, resources map[string]json.RawMessage, steps []Step, log *applog.Logger) error {
+	if log == nil {
+		log = applog.Discard()
+	}
+	var toRun int
+	for _, st := range steps {
+		if st.Action != ActionSkip {
+			toRun++
+		}
+	}
+	log.Infof("restore: applying %d create/update operation(s)...", toRun)
+
+	done := 0
 	for _, st := range steps {
 		if st.Action == ActionSkip {
 			continue
@@ -19,6 +32,7 @@ func Apply(c *nsx.Client, apiPrefix string, resources map[string]json.RawMessage
 			return fmt.Errorf("missing body for %s", st.Path)
 		}
 		rel := dfw.RelFromCanonical(st.Path)
+		log.Debugf("PUT %s (%s)", st.Path, st.Action.String())
 		body, status, err := c.Put(apiPrefix, rel, stripReadOnlyFields(raw))
 		if err != nil {
 			return fmt.Errorf("PUT %s: %w", st.Path, err)
@@ -26,7 +40,12 @@ func Apply(c *nsx.Client, apiPrefix string, resources map[string]json.RawMessage
 		if err := nsx.DecodeAPIError(status, body); err != nil {
 			return fmt.Errorf("PUT %s: %w", st.Path, err)
 		}
+		done++
+		if done == 1 || done%20 == 0 || done == toRun {
+			log.Infof("restore: applied %d/%d operation(s)...", done, toRun)
+		}
 	}
+	log.Infof("restore: apply finished")
 	return nil
 }
 

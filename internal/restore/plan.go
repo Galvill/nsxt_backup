@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gv/nsxt-fw-backup/internal/applog"
 	"github.com/gv/nsxt-fw-backup/internal/dfw"
 	"github.com/gv/nsxt-fw-backup/internal/nsx"
 )
@@ -70,15 +71,20 @@ func displayNameFromRaw(raw json.RawMessage) string {
 }
 
 // BuildPlan compares backup resources to the manager and returns ordered steps.
-func BuildPlan(c *nsx.Client, apiPrefix string, resources map[string]json.RawMessage, force bool) ([]Step, error) {
+func BuildPlan(c *nsx.Client, apiPrefix string, resources map[string]json.RawMessage, force bool, log *applog.Logger) ([]Step, error) {
+	if log == nil {
+		log = applog.Discard()
+	}
 	order := OrderedResourcePaths(resources)
+	log.Infof("restore: comparing %d resources to the manager...", len(order))
 	var steps []Step
-	for _, path := range order {
+	for i, path := range order {
 		raw, ok := resources[path]
 		if !ok {
 			continue
 		}
 		rel := dfw.RelFromCanonical(path)
+		log.Debugf("plan GET %s", path)
 		respBody, status, err := c.Get(apiPrefix, rel)
 		if err != nil {
 			return nil, fmt.Errorf("GET %s: %w", path, err)
@@ -91,6 +97,7 @@ func BuildPlan(c *nsx.Client, apiPrefix string, resources map[string]json.RawMes
 		switch {
 		case status == 404:
 			if strings.TrimSpace(apiPrefix) != "" {
+				log.Debugf("plan GET %s (default scope)", path)
 				_, rootStatus, rerr := c.Get("", rel)
 				if rerr != nil {
 					return nil, fmt.Errorf("GET %s (default Policy scope): %w", path, rerr)
@@ -119,6 +126,11 @@ func BuildPlan(c *nsx.Client, apiPrefix string, resources map[string]json.RawMes
 			return nil, fmt.Errorf("GET %s: unexpected status %d", path, status)
 		}
 		steps = append(steps, st)
+		n := i + 1
+		if n == 1 || n%40 == 0 || n == len(order) {
+			log.Infof("restore: planned %d/%d resources...", n, len(order))
+		}
 	}
+	log.Infof("restore: plan complete (%d steps)", len(steps))
 	return steps, nil
 }

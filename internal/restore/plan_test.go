@@ -41,7 +41,7 @@ func TestBuildPlan_skipWhenExists(t *testing.T) {
 		"/infra/services/existing": []byte(`{"display_name":"Existing"}`),
 		"/infra/services/missing":  []byte(`{"display_name":"Missing"}`),
 	}
-	steps, err := BuildPlan(c, "", resources, false)
+	steps, err := BuildPlan(c, "", resources, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestBuildPlan_skipParentScopedUnderProject(t *testing.T) {
 	resources := map[string]json.RawMessage{
 		"/infra/services/parent-only": []byte(`{"display_name":"ParentOnly"}`),
 	}
-	steps, err := BuildPlan(c, prefix, resources, false)
+	steps, err := BuildPlan(c, prefix, resources, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestBuildPlan_skipParentScopedUnderProject(t *testing.T) {
 	if steps[0].Action != ActionSkip {
 		t.Fatalf("want SKIP, got %v (%s)", steps[0].Action, steps[0].Detail)
 	}
-	stepsForce, err := BuildPlan(c, prefix, resources, true)
+	stepsForce, err := BuildPlan(c, prefix, resources, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/gv/nsxt-fw-backup/internal/applog"
 	"github.com/gv/nsxt-fw-backup/internal/backup"
 	"github.com/gv/nsxt-fw-backup/internal/dfw"
 	"github.com/gv/nsxt-fw-backup/internal/nsx"
@@ -35,6 +36,8 @@ var (
 	restoreYes                 bool
 	restoreSkipDryRun          bool
 	restoreAcceptScopeMismatch bool
+
+	logLevel string
 )
 
 func main() {
@@ -102,6 +105,14 @@ func insecureFromEnv() bool {
 	return v == "1" || v == "true" || v == "yes"
 }
 
+func makeLogger() (*applog.Logger, error) {
+	lvl, err := applog.ParseLevel(logLevel)
+	if err != nil {
+		return nil, err
+	}
+	return applog.New(lvl), nil
+}
+
 func newClient() (*nsx.Client, error) {
 	auth, err := nsx.AuthFromEnv()
 	if err != nil {
@@ -153,6 +164,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&org, "org", "", "Organization id for multi-tenant Policy API paths")
 	rootCmd.PersistentFlags().StringVar(&project, "project", "", "Project id for multi-tenant Policy API paths")
 	rootCmd.PersistentFlags().BoolVar(&insecure, "insecure-skip-tls-verify", false, "Skip TLS verification (or NSXT_INSECURE_SKIP_TLS_VERIFY=true)")
+	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Log verbosity: quiet (errors only), info (progress), or debug (HTTP detail)")
 
 	backupCmd.Flags().StringVarP(&backupOutput, "output", "o", "", "write backup to this JSON file (required)")
 	backupCmd.Flags().StringVarP(&backupSection, "section", "s", "", "export only the DFW security policy (section) with this display_name (exact match)")
@@ -171,6 +183,10 @@ func init() {
 }
 
 func runBackup(_ *cobra.Command, _ []string) error {
+	log, err := makeLogger()
+	if err != nil {
+		return err
+	}
 	if err := validateOrgProjectPair(); err != nil {
 		return err
 	}
@@ -196,6 +212,7 @@ func runBackup(_ *cobra.Command, _ []string) error {
 		ManagerHost: managerHost,
 		Org:         org,
 		Project:     project,
+		Log:         log,
 	})
 	if err != nil {
 		return err
@@ -211,11 +228,15 @@ func runBackup(_ *cobra.Command, _ []string) error {
 	if err := enc.Encode(doc); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "wrote %d resources to %s\n", len(doc.Resources), backupOutput)
+	log.Infof("wrote %d resources to %s", len(doc.Resources), backupOutput)
 	return nil
 }
 
 func runRestore(_ *cobra.Command, _ []string) error {
+	log, err := makeLogger()
+	if err != nil {
+		return err
+	}
 	if restoreSkipDryRun && !restoreYes {
 		return fmt.Errorf("--skip-dry-run requires -y")
 	}
@@ -245,12 +266,12 @@ func runRestore(_ *cobra.Command, _ []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(os.Stderr, "section %q: restoring %d of %d resources from backup\n", strings.TrimSpace(restoreSection), len(resources), len(doc.Resources))
+		log.Infof("section %q: restoring %d of %d resources from backup", strings.TrimSpace(restoreSection), len(resources), len(doc.Resources))
 	}
 
 	prefix, usedBackupScope := resolveRestoreAPIPrefix(doc)
 	if usedBackupScope {
-		fmt.Fprintf(os.Stderr, "using api prefix from backup scope: %q\n", prefix)
+		log.Infof("using API prefix from backup scope: %q", prefix)
 	}
 	recorded := doc.Scope.RecordedAPIPrefix()
 	if strings.TrimSpace(prefix) != strings.TrimSpace(recorded) {
@@ -264,7 +285,7 @@ func runRestore(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	steps, err := restore.BuildPlan(c, prefix, resources, restoreForce)
+	steps, err := restore.BuildPlan(c, prefix, resources, restoreForce, log)
 	if err != nil {
 		return err
 	}
@@ -285,10 +306,10 @@ func runRestore(_ *cobra.Command, _ []string) error {
 		}
 	}
 
-	if err := restore.Apply(c, prefix, resources, steps); err != nil {
+	if err := restore.Apply(c, prefix, resources, steps, log); err != nil {
 		return err
 	}
-	fmt.Fprintln(os.Stderr, "restore completed")
+	log.Infof("restore completed")
 	return nil
 }
 
