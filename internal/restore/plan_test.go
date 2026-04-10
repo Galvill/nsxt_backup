@@ -60,6 +60,56 @@ func TestBuildPlan_skipWhenExists(t *testing.T) {
 	}
 }
 
+func TestBuildPlan_skipParentScopedUnderProject(t *testing.T) {
+	t.Parallel()
+	const prefix = "orgs/o/projects/p"
+	mux := http.NewServeMux()
+	mux.HandleFunc("/policy/api/v1/"+prefix+"/infra/services/parent-only", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method", http.StatusMethodNotAllowed)
+			return
+		}
+		http.NotFound(w, r)
+	})
+	mux.HandleFunc("/policy/api/v1/infra/services/parent-only", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method", http.StatusMethodNotAllowed)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"display_name":"ParentOnly"}`))
+	})
+	srv := httptest.NewTLSServer(mux)
+	defer srv.Close()
+	host := strings.TrimPrefix(srv.URL, "https://")
+	c, err := nsx.NewClient(nsx.Options{Host: host, InsecureSkipVerify: true}, func(h http.Header) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resources := map[string]json.RawMessage{
+		"/infra/services/parent-only": []byte(`{"display_name":"ParentOnly"}`),
+	}
+	steps, err := BuildPlan(c, prefix, resources, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(steps) != 1 {
+		t.Fatalf("steps: %d", len(steps))
+	}
+	if steps[0].Action != ActionSkip {
+		t.Fatalf("want SKIP, got %v (%s)", steps[0].Action, steps[0].Detail)
+	}
+	stepsForce, err := BuildPlan(c, prefix, resources, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stepsForce) != 1 || stepsForce[0].Action != ActionSkip {
+		t.Fatalf("with --force want SKIP for parent-only, got %#v", stepsForce)
+	}
+}
+
 func TestActionString(t *testing.T) {
 	if ActionCreate.String() != "CREATE" {
 		t.Fatal()
