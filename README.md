@@ -77,6 +77,8 @@ Global flags: `--host`, `--domain` (default `default`), `--org`, `--project`, `-
 
 Backup flags: `-o` / `--output`, `-s` / `--section` (optional), `--redact-host`.
 
+When both `--org` and `--project` are set, referenced **groups**, **services**, and **context profiles** are only downloaded if they exist **under that project**. Objects that exist only at the default Policy root (no org/project prefix) are **not** copied into `resources`; rule and policy JSON still contain their `/infra/...` path strings so references are preserved in the backup file.
+
 ### Restore
 
 1. By default, loads the backup, **GET**s each resource on the manager, and prints a **dry-run** table (`CREATE` / `SKIP` / `UPDATE`).
@@ -97,6 +99,8 @@ Backup flags: `-o` / `--output`, `-s` / `--section` (optional), `--redact-host`.
 
 If you do not pass `--org` / `--project`, the tool uses `api_prefix` from the backup file’s `scope` when present.
 
+When restoring into a project (`--org` / `--project` or `api_prefix` from the backup), objects that are **missing** under the project but **already exist** at the default Policy root are **not** created under the project (plan shows **SKIP**); `--force` does not override this.
+
 Restore flags: `-i` / `--input`, `-s` / `--section` (optional subset restore), `--force`, `-y` / `--yes`, `--skip-dry-run`.
 
 ## Backup file format
@@ -110,6 +114,7 @@ Security policies are stored **without** an inline `rules` array; rules are sepa
 ## Limitations
 
 - **Distributed firewall only** (not gateway firewall).
+- **Tenant vs parent scope**: parent-scoped shared objects are referenced by path in rules but not re-serialized as separate `resources` entries in project backups; restore into a project skips applying those bodies. If your manager only exposes “global” objects under a specific default org/project path instead of the root Policy API, you may need a code change to probe that prefix as well.
 - Restore uses **PUT** with bodies from the backup; some environments may require ETag/`If-Match` for updates—if PUT fails, check manager logs and API docs for your version.
 - Very large policies may require tuning HTTP timeouts in code for your environment.
 

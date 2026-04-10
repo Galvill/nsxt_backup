@@ -79,6 +79,8 @@ func Export(ctx context.Context, opts ExportOptions) (*backup.Document, error) {
 
 	seen := make(map[string]struct{})
 	queue := make([]string, 0, 64)
+	prefetched := make(map[string][]byte)
+	tenantPrefix := strings.TrimSpace(opts.APIPrefix)
 
 	for _, p := range policies {
 		policyPath := policyCanonicalPath(domain, p)
@@ -105,9 +107,18 @@ func Export(ctx context.Context, opts ExportOptions) (*backup.Document, error) {
 		}
 
 		rel := RelFromCanonical(path)
-		body, status, err := opts.Client.Get(opts.APIPrefix, rel)
-		if err != nil {
-			return nil, err
+		var body []byte
+		var status int
+		var err error
+		if pb, ok := prefetched[path]; ok {
+			body = pb
+			status = 200
+			delete(prefetched, path)
+		} else {
+			body, status, err = opts.Client.Get(opts.APIPrefix, rel)
+			if err != nil {
+				return nil, err
+			}
 		}
 		if status == 404 {
 			return nil, fmt.Errorf("GET %s: not found (404)", path)
@@ -130,6 +141,21 @@ func Export(ctx context.Context, opts ExportOptions) (*backup.Document, error) {
 				continue
 			}
 			if _, ok := ClassifyPath(ref); ok {
+				if tenantPrefix != "" {
+					if _, have := prefetched[ref]; !have {
+						subRel := RelFromCanonical(ref)
+						fetch, pre, perr := ResolveReferencedLeafForTenantBackup(opts.Client, tenantPrefix, subRel)
+						if perr != nil {
+							return nil, fmt.Errorf("%w (ref %s)", perr, ref)
+						}
+						if !fetch {
+							continue
+						}
+						if len(pre) > 0 {
+							prefetched[ref] = append([]byte(nil), pre...)
+						}
+					}
+				}
 				queue = append(queue, ref)
 			}
 		}

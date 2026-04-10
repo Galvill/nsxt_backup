@@ -90,6 +90,18 @@ func BuildPlan(c *nsx.Client, apiPrefix string, resources map[string]json.RawMes
 		}
 		switch {
 		case status == 404:
+			if strings.TrimSpace(apiPrefix) != "" {
+				_, rootStatus, rerr := c.Get("", rel)
+				if rerr != nil {
+					return nil, fmt.Errorf("GET %s (default Policy scope): %w", path, rerr)
+				}
+				if dfw.ShouldSkipRestoreCreateAtTenant(status, rootStatus) {
+					st.Action = ActionSkip
+					st.Detail = "exists only at default/root Policy scope (not applied under project)"
+					steps = append(steps, st)
+					continue
+				}
+			}
 			st.Action = ActionCreate
 			st.Detail = "object missing on manager"
 		case status >= 200 && status < 300:
