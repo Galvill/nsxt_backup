@@ -29,17 +29,54 @@ var (
 	backupSection string
 	backupRedact  bool
 
-	restoreInput      string
-	restoreSection    string
-	restoreForce      bool
-	restoreYes        bool
-	restoreSkipDryRun bool
+	restoreInput               string
+	restoreSection             string
+	restoreForce               bool
+	restoreYes                 bool
+	restoreSkipDryRun          bool
+	restoreAcceptScopeMismatch bool
 )
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+func formatAPIPrefixForMessage(p string) string {
+	if strings.TrimSpace(p) == "" {
+		return "(none — default / non-tenant Policy path)"
+	}
+	return p
+}
+
+func resolveRestoreAPIPrefix(doc backup.Document) (prefix string, usedBackupScope bool) {
+	prefix = apiPrefix()
+	if doc.Scope.APIPrefix != "" && prefix == "" {
+		return doc.Scope.APIPrefix, true
+	}
+	return prefix, false
+}
+
+func confirmRestoreScopeMismatch(target, recorded string) error {
+	fmt.Fprintf(os.Stderr, "warning: restore target API prefix %s differs from the backup scope (%s).\n",
+		formatAPIPrefixForMessage(target), formatAPIPrefixForMessage(recorded))
+	if restoreAcceptScopeMismatch {
+		return nil
+	}
+	if restoreYes {
+		return fmt.Errorf("refusing restore with mismatched org/project scope; pass --accept-scope-mismatch to allow this")
+	}
+	fmt.Fprint(os.Stderr, "Continue with mismatched scope? [y/N]: ")
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil {
+		return err
+	}
+	line = strings.TrimSpace(strings.ToLower(line))
+	if line != "y" && line != "yes" {
+		return fmt.Errorf("aborted")
+	}
+	return nil
 }
 
 func apiPrefix() string {
@@ -120,6 +157,7 @@ func init() {
 	restoreCmd.Flags().BoolVar(&restoreForce, "force", false, "overwrite existing objects on the manager")
 	restoreCmd.Flags().BoolVarP(&restoreYes, "yes", "y", false, "do not prompt for confirmation after dry-run")
 	restoreCmd.Flags().BoolVar(&restoreSkipDryRun, "skip-dry-run", false, "skip printing the plan preview (requires -y)")
+	restoreCmd.Flags().BoolVar(&restoreAcceptScopeMismatch, "accept-scope-mismatch", false, "allow restore when --org/--project target differs from backup scope (required with -y when they differ)")
 
 	rootCmd.AddCommand(backupCmd, restoreCmd)
 	backupCmd.MarkFlagRequired("output")
@@ -198,14 +236,20 @@ func runRestore(_ *cobra.Command, _ []string) error {
 		fmt.Fprintf(os.Stderr, "section %q: restoring %d of %d resources from backup\n", strings.TrimSpace(restoreSection), len(resources), len(doc.Resources))
 	}
 
+	prefix, usedBackupScope := resolveRestoreAPIPrefix(doc)
+	if usedBackupScope {
+		fmt.Fprintf(os.Stderr, "using api prefix from backup scope: %q\n", prefix)
+	}
+	recorded := doc.Scope.RecordedAPIPrefix()
+	if strings.TrimSpace(prefix) != strings.TrimSpace(recorded) {
+		if err := confirmRestoreScopeMismatch(prefix, recorded); err != nil {
+			return err
+		}
+	}
+
 	c, err := newClient()
 	if err != nil {
 		return err
-	}
-	prefix := apiPrefix()
-	if doc.Scope.APIPrefix != "" && prefix == "" {
-		prefix = doc.Scope.APIPrefix
-		fmt.Fprintf(os.Stderr, "using api prefix from backup scope: %q\n", prefix)
 	}
 
 	steps, err := restore.BuildPlan(c, prefix, resources, restoreForce)
