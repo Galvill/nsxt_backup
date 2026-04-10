@@ -79,14 +79,20 @@ func confirmRestoreScopeMismatch(target, recorded string) error {
 	return nil
 }
 
+func validateOrgProjectPair() error {
+	o := strings.TrimSpace(org)
+	p := strings.TrimSpace(project)
+	if (o != "") != (p != "") {
+		return fmt.Errorf("--org and --project must be supplied together (provide both, or neither)")
+	}
+	return nil
+}
+
 func apiPrefix() string {
 	o := strings.TrimSpace(org)
 	p := strings.TrimSpace(project)
 	if o != "" && p != "" {
 		return "orgs/" + url.PathEscape(o) + "/projects/" + url.PathEscape(p)
-	}
-	if o != "" || p != "" {
-		fmt.Fprintln(os.Stderr, "warning: both --org and --project are required for multi-tenant paths; ignoring partial values")
 	}
 	return ""
 }
@@ -165,6 +171,9 @@ func init() {
 }
 
 func runBackup(_ *cobra.Command, _ []string) error {
+	if err := validateOrgProjectPair(); err != nil {
+		return err
+	}
 	c, err := newClient()
 	if err != nil {
 		return err
@@ -209,6 +218,9 @@ func runBackup(_ *cobra.Command, _ []string) error {
 func runRestore(_ *cobra.Command, _ []string) error {
 	if restoreSkipDryRun && !restoreYes {
 		return fmt.Errorf("--skip-dry-run requires -y")
+	}
+	if err := validateOrgProjectPair(); err != nil {
+		return err
 	}
 
 	data, err := os.ReadFile(restoreInput)
