@@ -53,7 +53,7 @@ Credentials are **never** accepted on the command line.
 
 ### Backup
 
-Exports all security policies in the domain (or one policy by display name), their rules, and referenced objects (groups, services, context profiles) reachable from those rules.
+Exports all security policies in the domain (or one **section** — a security policy — by `--section` / `-s` **display_name** exact match), their rules, and referenced objects (groups, services, context profiles) reachable from those rules.
 
 ```bash
 export NSXT_MANAGER_HOST=https://nsx.example.com
@@ -62,8 +62,9 @@ export NSXT_PASSWORD='secret'
 
 ./nsxt-fw-backup backup --output backup.json
 
-# Single section (security policy display_name exact match)
-./nsxt-fw-backup backup --output section.json --section "App firewall"
+# Single DFW section only (security policy display_name, exact match)
+./nsxt-fw-backup backup -o section.json --section "App firewall"
+./nsxt-fw-backup backup -o section.json -s "App firewall"
 
 # Multi-tenant Policy path prefix (both org and project required)
 ./nsxt-fw-backup backup --org default --project tenant-a -o tenant.json
@@ -73,6 +74,8 @@ export NSXT_PASSWORD='secret'
 ```
 
 Global flags: `--host`, `--domain` (default `default`), `--org`, `--project`, `--insecure-skip-tls-verify`.
+
+Backup flags: `-o` / `--output`, `-s` / `--section` (optional), `--redact-host`.
 
 ### Restore
 
@@ -86,9 +89,15 @@ Global flags: `--host`, `--domain` (default `default`), `--org`, `--project`, `-
 ./nsxt-fw-backup restore -i backup.json --yes
 ./nsxt-fw-backup restore -i backup.json --force
 ./nsxt-fw-backup restore -i backup.json --skip-dry-run -y
+
+# Only one DFW section (security policy display_name): policy, its rules, and referenced
+# groups/services/context-profiles that appear in this backup file
+./nsxt-fw-backup restore -i full-backup.json -s "App firewall"
 ```
 
 If you do not pass `--org` / `--project`, the tool uses `api_prefix` from the backup file’s `scope` when present.
+
+Restore flags: `-i` / `--input`, `-s` / `--section` (optional subset restore), `--force`, `-y` / `--yes`, `--skip-dry-run`.
 
 ## Backup file format
 

@@ -21,3 +21,17 @@ func RelFromCanonical(canonical string) string {
 	c = strings.TrimPrefix(c, "/")
 	return c
 }
+
+// SecurityPolicyIDFromPath returns the security policy id from a canonical policy path
+// (/infra/domains/{domain}/security-policies/{id}) or a rule path (.../security-policies/{id}/rules/...).
+func SecurityPolicyIDFromPath(path string) string {
+	p := NormalizeResourceKey(path)
+	parts := strings.Split(strings.TrimPrefix(p, "/"), "/")
+	if len(parts) < 5 {
+		return ""
+	}
+	if parts[0] != "infra" || parts[1] != "domains" || parts[3] != "security-policies" {
+		return ""
+	}
+	return parts[4]
+}

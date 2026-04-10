@@ -30,6 +30,7 @@ var (
 	backupRedact  bool
 
 	restoreInput      string
+	restoreSection    string
 	restoreForce      bool
 	restoreYes        bool
 	restoreSkipDryRun bool
@@ -95,10 +96,11 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&insecure, "insecure-skip-tls-verify", false, "Skip TLS verification (or NSXT_INSECURE_SKIP_TLS_VERIFY=true)")
 
 	backupCmd.Flags().StringVarP(&backupOutput, "output", "o", "", "write backup to this JSON file (required)")
-	backupCmd.Flags().StringVar(&backupSection, "section", "", "export only the security policy with this display_name")
+	backupCmd.Flags().StringVarP(&backupSection, "section", "s", "", "export only the DFW security policy (section) with this display_name (exact match)")
 	backupCmd.Flags().BoolVar(&backupRedact, "redact-host", false, "omit manager host from the backup file")
 
 	restoreCmd.Flags().StringVarP(&restoreInput, "input", "i", "", "read backup from this JSON file (required)")
+	restoreCmd.Flags().StringVarP(&restoreSection, "section", "s", "", "restore only this DFW security policy (section) by display_name (exact match; subset of backup)")
 	restoreCmd.Flags().BoolVar(&restoreForce, "force", false, "overwrite existing objects on the manager")
 	restoreCmd.Flags().BoolVarP(&restoreYes, "yes", "y", false, "do not prompt for confirmation after dry-run")
 	restoreCmd.Flags().BoolVar(&restoreSkipDryRun, "skip-dry-run", false, "skip printing the plan preview (requires -y)")
@@ -170,6 +172,16 @@ func runRestore(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("backup contains no resources")
 	}
 
+	resources := doc.Resources
+	if strings.TrimSpace(restoreSection) != "" {
+		var err error
+		resources, err = restore.FilterResourcesForSection(doc.Resources, restoreSection)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "section %q: restoring %d of %d resources from backup\n", strings.TrimSpace(restoreSection), len(resources), len(doc.Resources))
+	}
+
 	c, err := newClient()
 	if err != nil {
 		return err
@@ -180,7 +192,7 @@ func runRestore(_ *cobra.Command, _ []string) error {
 		fmt.Fprintf(os.Stderr, "using api prefix from backup scope: %q\n", prefix)
 	}
 
-	steps, err := restore.BuildPlan(c, prefix, doc.Resources, restoreForce)
+	steps, err := restore.BuildPlan(c, prefix, resources, restoreForce)
 	if err != nil {
 		return err
 	}
@@ -201,7 +213,7 @@ func runRestore(_ *cobra.Command, _ []string) error {
 		}
 	}
 
-	if err := restore.Apply(c, prefix, doc.Resources, steps); err != nil {
+	if err := restore.Apply(c, prefix, resources, steps); err != nil {
 		return err
 	}
 	fmt.Fprintln(os.Stderr, "restore completed")

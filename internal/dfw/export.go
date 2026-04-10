@@ -135,7 +135,7 @@ func Export(ctx context.Context, opts ExportOptions) (*backup.Document, error) {
 		}
 
 		if kind == KindSecurityPolicy {
-			policyID := segmentAfter(path, "security-policies")
+			policyID := SecurityPolicyIDFromPath(path)
 			if policyID == "" {
 				continue
 			}
@@ -176,19 +176,4 @@ func policyCanonicalPath(domain string, p PolicySummary) string {
 		return NormalizeResourceKey(p.Path)
 	}
 	return normalizePath(fmt.Sprintf("/infra/domains/%s/security-policies/%s", domainPathSeg(domain), p.ID))
-}
-
-func segmentAfter(path, marker string) string {
-	path = NormalizeResourceKey(path)
-	needle := "/" + marker + "/"
-	i := strings.Index(path, needle)
-	if i < 0 {
-		return ""
-	}
-	rest := path[i+len(needle):]
-	j := strings.Index(rest, "/")
-	if j < 0 {
-		return rest
-	}
-	return rest[:j]
 }
