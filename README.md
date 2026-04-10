@@ -11,16 +11,30 @@ Test against your NSX-T version; rule and policy shapes can vary slightly betwee
 
 ## Install / build
 
+From the repository root, use the [Makefile](Makefile) (pure Go, `CGO_ENABLED=0`):
+
 ```bash
-go build -o nsxt-fw-backup ./cmd/nsxt-fw-backup
+# Current OS/arch → dist/nsxt-fw-backup
+make build
+
+# Linux, Windows, and Darwin for amd64 and arm64 → dist/
+make build-all
+
+# Remove build output
+make clean
+
+# Target summary
+make help
 ```
 
-Cross-compile examples (pure Go, no CGO):
+Output directory defaults to `dist/`; override with `make build DIST=out` or `make build-all DIST=out`.
+
+After `make build`, invoke `./dist/nsxt-fw-backup` in place of `./nsxt-fw-backup` in the examples below.
+
+To build without Make:
 
 ```bash
-GOOS=linux GOARCH=amd64 go build -o nsxt-fw-backup-linux-amd64 ./cmd/nsxt-fw-backup
-GOOS=windows GOARCH=amd64 go build -o nsxt-fw-backup.exe ./cmd/nsxt-fw-backup
-GOOS=darwin GOARCH=arm64 go build -o nsxt-fw-backup-darwin-arm64 ./cmd/nsxt-fw-backup
+go build -o nsxt-fw-backup ./cmd/nsxt-fw-backup
 ```
 
 ## Environment variables (authentication)
