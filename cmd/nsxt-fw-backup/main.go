@@ -71,20 +71,36 @@ func newClient() (*nsx.Client, error) {
 	}, auth)
 }
 
+const envVarsHelp = `Required environment (unless overridden by flags where noted):
+
+  NSXT_MANAGER_HOST or NSXT_HOST   Policy API manager hostname or URL (required if --host is unset)
+
+  Either basic auth or bearer (not both):
+    NSXT_USERNAME and NSXT_PASSWORD
+    NSXT_BEARER_TOKEN or NSXT_API_KEY
+
+Optional:
+
+  NSXT_INSECURE_SKIP_TLS_VERIFY   If set to 1, true, or yes, skip TLS certificate verification
+                                  (same effect as --insecure-skip-tls-verify).`
+
 var rootCmd = &cobra.Command{
 	Use:   "nsxt-fw-backup",
 	Short: "Backup and restore NSX-T distributed firewall Policy API configuration",
+	Long:  "Backup and restore NSX-T distributed firewall Policy API configuration.\n\n" + envVarsHelp,
 }
 
 var backupCmd = &cobra.Command{
 	Use:   "backup",
 	Short: "Export DFW security policies and referenced objects to JSON",
+	Long:  envVarsHelp,
 	RunE:  runBackup,
 }
 
 var restoreCmd = &cobra.Command{
 	Use:   "restore",
 	Short: "Restore DFW configuration from a JSON backup",
+	Long:  envVarsHelp,
 	RunE:  runRestore,
 }
 
